@@ -16,13 +16,14 @@
     example:
         api = OAuth2Api('appkey', 'appsecret', 'callback_url')
         url = api.get_auth_url()
+        import webbrowser
         webbrowser.open(url)
         code = raw_input(">>").strip()
         token = api.create_token(code)
         print token
-        # print api.statuses.public_timeline.get(token)
-        # print api.statuses.upload.post(token, status = u'测试数据', pic = "~/t.jpg")
-        print api.statuses.update.post(token, status = u'测试数据2')
+        print api.t.add.post(token, status = u'测试数据2')
+        # print api.t.add_pic.post(token, content = u'春节放假安，排新快乐！', pic = "/Users/kim/Desktop/test.JPG")
+        # print api.t.delete.post(token, id = 203960130148698)
 '''
 
 __version__ = '0.1a'
@@ -98,15 +99,11 @@ def _request(http_method, url, query = None, timeout = 10):
     scheme, netloc, path, params, args = urlparse(url)[:5]
     if args:
         path += '?' + args
-    conn = httplib.HTTPConnection(netloc, timeout = timeout) if scheme == 'http' else httplib.HTTPSConnection(netloc, timeout = timeout)
+    conn = httplib.HTTPSConnection(netloc, timeout = timeout) if scheme == 'http' else httplib.HTTPSConnection(netloc, timeout = timeout)
     headers = {
         'User-Agent': 'QQWeiBo-Python-Client; Created by darkbull(http://darkbull.net)',
         'Host': netloc,
     }
-    print '-' * 30
-    print url
-    print '-' * 30
-    
     
     if 't/add_pic' in url:    # 需要上传图片
         assert http_method == 'POST'
@@ -115,8 +112,8 @@ def _request(http_method, url, query = None, timeout = 10):
         
         if not isfile(pic_path):
             raise WeiBoError(u'File "{0}" not exist' % pic_path)
-        if getsize(pic_path) > 1024 * 1024 * 5: # 新浪微博上传图片大小限制是5M.
-            raise WeiBoError('Size of file "{0}" must be less than 5M.' % pic_path)
+        if getsize(pic_path) > 1024 * 1024 * 4: # QQ微博上传图片大小限制是4M.
+            raise WeiBoError('Size of file "{0}" must be less than 4M.' % pic_path)
             
         boundary = '------' + str(uuid.uuid4())
         body = [ ]
@@ -145,13 +142,13 @@ def _request(http_method, url, query = None, timeout = 10):
         body.append('')
         body.append(data)
         
-        body.append('--' + boundary + '--')
+        body.append('--' + boundary)
         body.append('')
         body = '\r\n'.join(body)
         
         headers['Content-Type'] = 'multipart/form-data; boundary=' + boundary
         headers['Content-Length'] = str(len(body))
-        headers['Connection'] = 'keep-alive'
+        headers['Connection'] = 'close'
     else:
         body = urllib.urlencode(query) if query else ''
         if http_method == 'POST':
@@ -172,7 +169,7 @@ def _request(http_method, url, query = None, timeout = 10):
     return result
 
 
-_URI_COMMON = ' https://open.t.qq.com/api/'
+_URI_COMMON = 'https://open.t.qq.com/api/'
 def _call(http_method, uri, token, **kwargs):
     if not uri.startswith('http'):
         uri = _URI_COMMON + uri
@@ -191,8 +188,9 @@ def _call(http_method, uri, token, **kwargs):
         params['access_token'] = token.access_token
         params['openid'] = token.open_id
         params['oauth_version'] = '2.a'
-        params['clientip'] = '60.186.221.66'
+        # params['clientip'] = '' # 以命名参数的形式传递该参数，如：api.t.add(token, content = u'', clientip = '192.168.1.1')
         params['scope'] = 'all'
+        params['format'] = 'json'
     
     try:
         errcode, reason, html = _request(http_method, uri, params)
@@ -219,7 +217,7 @@ class OAuth2Api(object):
     def __init__(self, appkey, appsecret, callback):
         self.appkey = appkey
         self.appsecret = appsecret
-        self.callback = callback
+        self.callback = callback    ＃ callback与后台设置的不一致好像也可以正常回调
         self._attrs = [ ]
         
     def get_auth_url(self):
@@ -247,12 +245,19 @@ class OAuth2Api(object):
         """调用接口，如：api.statuses.public_timeline.get(token) # 以get方式提交请求
         """
         http_method = self._attrs[-1]
-        api_uri = '/'.join(self._attrs[:-1])  
+        # del是python关键字，使用delete代替
+        attrs = ['del' if part == 'delete' else part for part in self._attrs[:-1]]
+        api_uri = '/'.join(attrs)  
         self._attrs = [ ]
         return _call(http_method, api_uri, token, **kwargs)
+
+
+# 通过授权的token，不需要instance OAuthApi，可以直接通过 qweibo2.api.进行调用
+api = OAuth2Api('', '', '')  
 
         
 if __name__ == '__main__':
     pass
+
     
     

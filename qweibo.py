@@ -6,6 +6,7 @@
     author：darkbull(http://darkbull.net)
     date: 2011-10-22
     modify: 2013-01-03 (说明：使用动态方法调用api)
+    modify: 2013-01-04 (说明：bug fix: del是python关键字，使用delete代替)
     desc:
         QQ微博api的python封装.(基于OAuth1.0)
         QQ微博Oauth1.0授权过程参考：http://wiki.open.t.qq.com/index.php/OAuth%E6%8E%88%E6%9D%83%E8%AF%B4%E6%98%8E
@@ -13,22 +14,24 @@
         说明：
             . 所有的api封装方法名均与官方api文档描述保持一致(除del外，del是python关键字，这里改成delete)
             . 所有api接口调用的第一个参数必须是access token，不管该api在官方文档里是否要求鉴权
-            . 参数必须以命名参数的形式传递, 如：t.add(token, content = u'天朝SB一大堆，你抄我嘞我抄你。')。如果要传递字符串参数，请使用unicode。
+            . 参数必须以命名参数的形式传递, 如：OAuthApi('appkey', 'appsecret').t.add(token, content = u'天朝SB一大堆，你抄我嘞我抄你。')。如果要传递字符串参数，请使用unicode。
         
         python版本要求：python2.6+，不支持python3.x
+
+    note: 接口调用是非线程安全，同一个OAuthApi对象，在多线程中调用是不安全的。
     
     example:
-        api = OAuthApi('appkey', 'appsecret')
-        token = api.create_token('http://here.is.callback.url') # 获取未授权的token
+        api = OAuthApi('app_key', 'app_secret')
+        token = api.create_token('http://callback.url') # 获取未授权的token
         url = token.get_auth_url()
         import webbrowser
         webbrowser.open(url)
         code = raw_input(">>").strip()
         token.set_verifier(code)    # token授权，并换取access token.
-        
-        # api.t.add.post(token, content = u'数据测试')  # api 调用
-        api.t.add_pic.post(token, content = u'测试上传图片哈哈', pic = '~/main.jpg')
-        
+
+        #print api.t.add.post(token, content = u'数据测试')  # api 调用
+        print api.t.add_pic.post(token, content = u'选择python，选择简洁', pic = '/Users/kim/Desktop/test.JPG')
+        print api.t.delete.post(token, id = 140887054982728)    # 删除微博, del 是py关键字，用delete代替
 '''
 
 __version__ = '0.1b'
@@ -226,7 +229,7 @@ def _request(http_method, url, query = None, timeout = 10, token = None):
         body.append('')
         body.append(data)
         
-        body.append('--' + boundary + '--')
+        body.append('--' + boundary)
         body.append('')
         body = '\r\n'.join(body)
         
@@ -264,7 +267,7 @@ def _call(http_method, uri, token, **kwargs):
             key = utf8(key)
         if type(val) is unicode:
             val = utf8(val)
-        params[key] = val
+        params[str(key)] = str(val)
     
     try:
         errcode, reason, html = _request(http_method, uri, params, token = token)
@@ -326,7 +329,9 @@ class OAuthApi(object):
         """调用接口，如：api.statuses.public_timeline.get(token) # 以get方式提交请求
         """
         http_method = self._attrs[-1]
-        api_uri = '/'.join(self._attrs[:-1])  
+        # del是python关键字，使用delete代替
+        attrs = ['del' if part == 'delete' else part for part in self._attrs[:-1]]
+        api_uri = '/'.join(attrs)  
         self._attrs = [ ]
         return _call(http_method, api_uri, token, **kwargs)
         
@@ -337,5 +342,7 @@ api = OAuthApi('', '')
         
 if __name__ == '__main__':
     pass
+    
+    
     
     

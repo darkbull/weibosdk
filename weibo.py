@@ -271,7 +271,7 @@ def _call(http_method, uri, token, **kwargs):
             key = utf8(key)
         if type(val) is unicode:
             val = utf8(val)
-        params[key] = val
+        params[str(key)] = str(val)
     
     try:
         errcode, reason, html = _request(http_method, uri, params, token = token)
