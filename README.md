@@ -2,6 +2,7 @@ weibosdk
 ========
 
 主要微博平台开发文档的python封装，调用方式如下：
+
     api = OAuthApi('appkey', 'appsecret')
     token = api.create_token('http://here.is.callback') # 
     url = token.get_auth_url()
