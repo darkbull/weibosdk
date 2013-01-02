@@ -18,4 +18,7 @@ weibosdk
     api.statuses.update.post(token, status = u'调用接口就是这么简单....')  # 调用方法统一为：api_url.http_method
     print api.statuses.upload.post(token, pic = '~/main.jpg')  # 上传图片
     
-支持新浪，网易微博
+每个py模块都可单独使用，不依赖其他库。当前实现(2013-01-01):
+    weibo2.py: 新浪微博Oauth2.0接口
+    weibo.py: 新浪微博Oauth1.0接口
+    tweibo.py: 网易微博Oauth1.0接口
