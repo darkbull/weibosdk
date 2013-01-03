@@ -2,28 +2,33 @@
 # -*- coding: utf-8 -*-
 
 ''' 
-    File: tweibo.py
-    Author: DarkBull
-    Date: 2011-10-26 
-    Modify: 2013-01-02
-    
-    Desc:
-        网易微博api的python封装 (基于oauth1.0)
-        api参考文档：http://open.t.163.com/wiki/index.php?title=Document
+    file: qweibo.py
+    author：darkbull(http://darkbull.net)
+    date: 2011-10-22
+    modify: 2013-01-03 (说明：使用动态方法调用api)
+    desc:
+        QQ微博api的python封装.(基于OAuth1.0)
+        QQ微博Oauth1.0授权过程参考：http://wiki.open.t.qq.com/index.php/OAuth%E6%8E%88%E6%9D%83%E8%AF%B4%E6%98%8E
+        QQ微博在线api文档参考：http://open.t.qq.com/resource.php?i=1,0
+        说明：
+            . 所有的api封装方法名均与官方api文档描述保持一致(除del外，del是python关键字，这里改成delete)
+            . 所有api接口调用的第一个参数必须是access token，不管该api在官方文档里是否要求鉴权
+            . 参数必须以命名参数的形式传递, 如：t.add(token, content = u'天朝SB一大堆，你抄我嘞我抄你。')。如果要传递字符串参数，请使用unicode。
+        
+        python版本要求：python2.6+，不支持python3.x
     
     example:
         api = OAuthApi('appkey', 'appsecret')
-        token = api.create_token('http://www.baidu.com')
+        token = api.create_token('http://here.is.callback.url') # 获取未授权的token
         url = token.get_auth_url()
+        import webbrowser
         webbrowser.open(url)
         code = raw_input(">>").strip()
-        token.set_verifier(code)
-        print str(token)
-        # ret = api.statuses.user_timeline.get(token)
-        # for item in ret:
-            # print utf8(item.text)
-        api.statuses.update.post(token, status = u'测试数据发布')
-        # print api.statuses.upload.post(token, pic = '~/main.jpg')
+        token.set_verifier(code)    # token授权，并换取access token.
+        
+        # api.t.add.post(token, content = u'数据测试')  # api 调用
+        api.t.add_pic.post(token, content = u'测试上传图片哈哈', pic = '~/main.jpg')
+        
 '''
 
 __version__ = '0.1b'
@@ -43,6 +48,7 @@ import hashlib
 from os.path import getsize, isfile, basename
 from urlparse import urlparse
 
+
 hmac_sha1 = lambda key, val: binascii.b2a_base64(hmac.new(str(key), val, hashlib.sha1).digest())[:-1]
 nonce = lambda: str(random.randint(1000000, 9999999))
 tm = lambda: str(int(time.time()))
@@ -61,7 +67,7 @@ class WeiBoError(Exception):
     
 class DictObject(dict):  
     def __init__(self, d): 
-        if isinstance(d, basestring):
+        if isinstance(d, basestring):   # json-string
             d = json.loads(d)
         dict.__init__(self, d)  
       
@@ -80,10 +86,14 @@ class DictObject(dict):
 
 
 class OAuthToken(object):
-    def __init__(self, appkey, appsecret, oauth_token, oauth_token_secret, original_data = '', callback = 'null'):
+    def __init__(self, appkey, appsecret, oauth_token, oauth_token_secret, name = '', original_data = '', callback = 'null'):
         """
         
-        @param callback: callback为"null"表示桌面应用。具体参考：http://open.t.163.com/wiki/index.php?title=OAuth%E6%8E%88%E6%9D%83%E8%AF%B4%E6%98%8E
+        @param oauth_token: 授权过的token
+        @param oatuh_token_secret: 授权过的token_secret
+        @param name: 授权用户名
+        @param original_data: 授权token的原始数据
+        @param callback: 回调方式. "null"表示为桌面应用
         """
         self.appkey = appkey  # 该token对应的应用
         self.appsecret = appsecret  # 该token对应的应用的secret
@@ -91,7 +101,8 @@ class OAuthToken(object):
         
         self.oauth_token = oauth_token
         self.oauth_token_secret = oauth_token_secret
-        self.original_data = original_data  
+        self.name = name    # 用户名称
+        self.original_data = original_data
         self.callback = callback
         
     @property
@@ -103,27 +114,17 @@ class OAuthToken(object):
     def __str__(self):
         return self.original_data
         
-    _AUTHORIZE_URL = 'http://api.t.163.com/oauth/authenticate?oauth_token={token}&client_type={client_type}&oauth_callback={callback}'  # web应用
-    _AUTHORIZE_URL2 = 'http://api.t.163.com/oauth/authorize?oauth_token={token}&client_type={client_type}'    # 桌面应用
-    def get_auth_url(self, client_type = 'web'):
-        '''获取用户授权url
+    def get_auth_url(self):
+        """获取用户授权url
+        """
+        _AUTHORIZE_URL = 'https://open.t.qq.com/cgi-bin/authorize?oauth_token=%s'
+        url = _AUTHORIZE_URL % self.oauth_token
+        return url
         
-        @param client_type: 客户端类型(不是指应用类型).
-        @note: 网易开发平台针对不同的应用类型，授权有点区别(居然用了两个url, fuck...)：
-            对于web应用用户授权之后直接跳转到callback，不需要进一步操作(设置oauth_verifier)，原有request token自动变成授权的request token.
-            对于非web应用用户授权之后会获取oauth_verifier码，使用该码换取授权过的request token.
-        '''
-        if self.callback and self.callback.lower().startswith('http'):
-            return OAuthToken._AUTHORIZE_URL.format(token = self.oauth_token, callback = urlencode(self.callback), client_type = urlencode(client_type))
-        else:
-            return OAuthToken._AUTHORIZE_URL2.format(token = self.oauth_token, client_type = urlencode(client_type))
-        
-    _SIGNATURE_BASE_STRING2 = ('GET', 'http://api.t.163.com/oauth/access_token', 'oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_token={token}&oauth_verifier={verifier}&oauth_version=1.0')
-    _ACCESS_TOKEN_URL = 'http://api.t.163.com/oauth/access_token?oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_token={token}&oauth_verifier={verifier}&oauth_version=1.0&oauth_signature={signature}'
-    def set_verifier(self, verifier = ''):
+    _SIGNATURE_BASE_STRING2 = ('GET', 'https://open.t.qq.com/cgi-bin/access_token', 'oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_token={token}&oauth_verifier={verifier}&oauth_version=1.0')
+    _ACCESS_TOKEN_URL = 'https://open.t.qq.com/cgi-bin/access_token?oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_token={token}&oauth_verifier={verifier}&oauth_version=1.0&oauth_signature={signature}'
+    def set_verifier(self, verifier):
         '''通过授权的request token换取access token
-        
-        @param verifier: 接口实现时似乎不需要。
         '''
         if self.verified:
             raise OAuthError, ('oauth error', 'token is already authorized.')
@@ -132,19 +133,18 @@ class OAuthToken(object):
         http_method, uri, query = OAuthToken._SIGNATURE_BASE_STRING2
         args = query.format(app_key = self.appkey, nonce = n, timestamp = t, token = self.oauth_token, verifier = verifier)
         sig_base_str = '&'.join(urlencode(item) for item in (http_method, uri, args))
-        sig = hmac_sha1('%s&%s' % (self.appsecret, self.oauth_token_secret), sig_base_str)
+        sig = hmac_sha1('%s&%s' % (self.appsecret, self.oauth_token_secret), sig_base_str)  # 新浪的weibo签名验证只检查前x位
         url = OAuthToken._ACCESS_TOKEN_URL.format(app_key = self.appkey, nonce = n, signature = urlencode(sig), timestamp = t, token = self.oauth_token, verifier = verifier)
         
         try:
             errcode, reason, html = _request(http_method, url)
-            # eg: html: oauth_token=38e16f9c95eef2766b6f018b18d82c7b&oauth_token_secret=7ffdd683624131e75f60f41b5cab6077
+            # eg: html: oauth_token=6c27e9ce637c4ef8a6f280fe7e548b47&oauth_token_secret=132adfac68b1cba94dab0a4e6da74c7e&name=shaoxinglao9
         except IOError as ex:
             raise OAuthError(ex)
         if errcode != 200:
-            raise OAuthError, (errcode, 'oauth error', reason, html)
-            
-        self.oauth_token, self.oauth_token_secret = (item.split('=')[1] for item in html.split('&'))
+            raise OAuthError, (errcode, 'oauth error', reason)
         self.original_data = html
+        self.oauth_token, self.oauth_token_secret, self.name = (item.split('=')[1] for item in html.split('&'))
             
     def to_header(self):
         if not self.verified:
@@ -156,6 +156,7 @@ class OAuthToken(object):
                 'oauth_timestamp': tm(),
                 'oauth_nonce': nonce(),
                 'oauth_version': '1.0',
+                'format': 'json',   # NOTE: 通过json与服务器交互。在调用api时不允许再设置format参数
             }
         
     
@@ -172,15 +173,14 @@ def _request(http_method, url, query = None, timeout = 10, token = None):
         path += '?' + args
     conn = httplib.HTTPConnection(netloc, timeout = timeout) if scheme == 'http' else httplib.HTTPSConnection(netloc, timeout = timeout)
     headers = {
-        'User-Agent': '163WeiBo-Python-Client; Created by darkbull(http://darkbull.net)',
+        'User-Agent': 'QQWeiBo-Python-Client;Created by darkbull(http://darkbull.net)',
         'Host': netloc,
     }
-    upload_pic = 'statuses/upload' in url
+    upload_pic = 't/add_pic' in url
     if token and query:
         # 生成签名
-        # 如果有上传图片，只需签名"oauth_"开头的参数. Fuck, 在api文档里没有一点说明，浪费了我n多时间。fuck....
         if upload_pic:
-            items = [(key, val) for key, val in query.items() if key.startswith('oauth_')]
+            items = [(key, val) for key, val in query.items() if key != 'pic']
         else:
             items = query.items()
         items.sort()
@@ -188,17 +188,7 @@ def _request(http_method, url, query = None, timeout = 10, token = None):
         sig_base_str = '%s&%s&%s' % (http_method, urlencode(url), urlencode(t))
         sig = hmac_sha1('%s&%s' % (token.appsecret, token.oauth_token_secret), sig_base_str)
         query['oauth_signature'] = sig
-        
-        t = [ ]
-        auth_header = ['OAuth realm=""']
-        for key in query:
-            if key.startswith('oauth_'):
-                auth_header.append('%s="%s"' % (urlencode(key), urlencode(query[key])))
-                t.append(key)
-        for key in t:
-            del query[key]
-        headers['Authorization'] = ', '.join(auth_header)
-    
+
     if upload_pic:    # 需要上传图片
         assert http_method == 'POST'
         assert 'pic' in query
@@ -206,8 +196,8 @@ def _request(http_method, url, query = None, timeout = 10, token = None):
         
         if not isfile(pic_path):
             raise WeiBoError(u'File "{0}" not exist' % pic_path)
-        if not (1024 <= getsize(pic_path) <= 1024 * 1024 * 2): # 网易微博上传图片大小限制是1K-2M
-            raise WeiBoError('Size of file "{0}" must be less than 2M.' % pic_path)
+        if getsize(pic_path) > 1024 * 1024 * 4: # qq微博上传图片大小限制是4M.
+            raise WeiBoError('Size of file "{0}" must be less than 4M.' % pic_path)
         
         boundary = '------' + str(uuid.uuid4())
         body = [ ]
@@ -263,14 +253,11 @@ def _request(http_method, url, query = None, timeout = 10, token = None):
     return result
     
     
-_URI_COMMON = 'http://api.t.163.com/'
+_URI_COMMON = 'http://open.t.qq.com/api/'
 def _call(http_method, uri, token, **kwargs):
     if not uri.startswith('http'):
         uri = _URI_COMMON + uri
-    if not uri.endswith('.json'):
-        uri = uri + '.json'
     http_method = http_method.upper()
-        
     params = token.to_header()
     for key, val in kwargs.items():
         if type(key) is unicode:
@@ -295,6 +282,7 @@ def _call(http_method, uri, token, **kwargs):
     response = html.decode('utf-8') # utf-8 => unicode
     json_obj = json.loads(response)
     if type(json_obj) is dict and json_obj.get('error_code'):
+        # 错误码说明，参考：http://open.t.qq.com/resource.php?i=1,1#21_90
         raise WeiBoError(u'[error:%s occur when request "%s"]:%s' % (json_obj['error_code'],  json_obj['request'], json_obj['error']))
     return DictObject(json_obj)
 
@@ -305,29 +293,28 @@ class OAuthApi(object):
         self.appsecret = appsecret
         self._attrs = [ ]
         
-    _SIGNATURE_BASE_STRING = ('GET', 'http://api.t.163.com/oauth/request_token', 'oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_version=1.0')
-    _REQUEST_TOKEN_URL = 'http://api.t.163.com/oauth/request_token?oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature={signature}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_version=1.0'
+    _SIGNATURE_BASE_STRING = ('GET', 'https://open.t.qq.com/cgi-bin/request_token', 'oauth_callback={callback}&oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_version=1.0')
+    _REQUEST_TOKEN_URL = 'https://open.t.qq.com/cgi-bin/request_token?oauth_callback={callback}&oauth_consumer_key={app_key}&oauth_nonce={nonce}&oauth_signature={signature}&oauth_signature_method=HMAC-SHA1&oauth_timestamp={timestamp}&oauth_version=1.0'
     def create_token(self, callback = 'null'):
         '''创建未授权的request token
         
-        @param callback: 回调地址. null 表示(桌面应用)
+        @param callback: 回调地址. 
         '''
         n, t, cbk = nonce(), tm(), urlencode(callback)
         http_method, uri, query = OAuthApi._SIGNATURE_BASE_STRING
-        args = query.format(app_key = self.appkey, nonce = n, timestamp = t)
+        args = query.format(callback = cbk, app_key = self.appkey, nonce = n, timestamp = t)
         sig_base_str = '&'.join(urlencode(item) for item in (http_method, uri, args))
         sig = hmac_sha1(self.appsecret + '&', sig_base_str)
-        url = OAuthApi._REQUEST_TOKEN_URL.format(app_key = self.appkey, nonce = n, signature = urlencode(sig), timestamp = t)
-        
+        url = OAuthApi._REQUEST_TOKEN_URL.format(callback = cbk, app_key = self.appkey, nonce = n, signature = urlencode(sig), timestamp = t)
         try:
             errcode, reason, html = _request(http_method, url)
-            # eg: 200 OK oauth_token=89ed4f0cbff35e3b0a6d17b212b888a2&oauth_token_secret=3368aa297c303e1a3c6751d714d7120f
+            # eg: html: oauth_token=7e5e7d6528f24aab9cdeb93b2ec14797&oauth_token_secret=d2c25863e3e1560692dad47d4d1b1826&oauth_callback_confirmed=true
         except IOError as ex:
             raise OAuthError(ex)
         if errcode != 200:
             raise OAuthError, (errcode, 'oauth error', reason)
         
-        token, secret = (item.split('=')[1] for item in html.split('&'))
+        token, secret, _ = (item.split('=')[1] for item in html.split('&'))
         token = OAuthToken(self.appkey, self.appsecret, token, secret, original_data = '', callback = callback)
         return token
     
@@ -339,15 +326,16 @@ class OAuthApi(object):
         """调用接口，如：api.statuses.public_timeline.get(token) # 以get方式提交请求
         """
         http_method = self._attrs[-1]
-        api_uri = '/'.join(self._attrs[:-1])    # statues.home_time.get
+        api_uri = '/'.join(self._attrs[:-1])  
         self._attrs = [ ]
         return _call(http_method, api_uri, token, **kwargs)
         
         
-# 通过授权的token，可以直接通过 tweibo.api.进行调用
+# 通过授权的token，不需要instance OAuthApi，可以直接通过 qweibo.api.进行调用
 api = OAuthApi('', '') 
 
-       
+        
 if __name__ == '__main__':
     pass
+    
     

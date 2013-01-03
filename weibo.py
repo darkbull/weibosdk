@@ -9,6 +9,8 @@
         weibo api的python封装.（基于oauth1.0）
         weibo 微博在线api文档参考：http://open.weibo.com/wiki/API文档
         说明：
+            调用接口的参数名称，如果官方文档以":"开始，用"__"代替，例如：:id 用 __id 代替
+            
         python版本要求：python2.6+，不支持python3.x
     
     example:

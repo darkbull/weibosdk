@@ -2,14 +2,15 @@
 # -*- coding: utf-8 -*-
 
 ''' 
-    file: weibo2.py
+    file: qweibo2.py
     author：darkbull(http://darkbull.net)
-    date: 2012-10-14
+    date: 2013-01-03
     desc:
-        weibo api的python封装.（基于oauth2.0）
-        weibo 微博在线api文档参考：http://open.weibo.com/wiki/API%E6%96%87%E6%A1%A3_V2
+        QQ微博 api的python封装.（基于oauth2.0）
+        QQ微博 OAuth2.0 参考：http://wiki.open.t.qq.com/index.php/OAuth2.0%E9%89%B4%E6%9D%83
+        QQ微博 微博在线api文档参考：http://wiki.open.t.qq.com/index.php/API%E6%96%87%E6%A1%A3
         说明：
-            调用接口的参数名称，如果官方文档以":"开始，用"__"代替，例如：:id 用 __id 代替
+            
         python版本要求：python2.6+，不支持python3.x
     
     example:
@@ -26,7 +27,6 @@
 
 __version__ = '0.1a'
 __author__ = 'darkbull(http://darkbull.net)'
-
 
 import urllib
 import time
@@ -70,18 +70,21 @@ class DictObject(dict):
         
         
 class OAuthToken(object):
-    def __init__(self, appkey, appsecret, access_token, expires_in, uid = '', original_data = ''):
+    def __init__(self, appkey, appsecret, access_token, expires_in, open_id, name, nick, state, original_data = ''):
         self.appkey = appkey
         self.appsecret = appsecret
         self.access_token = access_token
         self.expires_in = expires_in
-        self.uid = uid
+        self.open_id = open_id
+        self.name = name
+        self.nick = nick
+        self.state = state
         self.original_data = original_data
         
     def __str__(self):
         if self.original_data:
             return self.original_data
-        return '{access_token: %s, expires_in: %s, uid: %s}' % (self.access_token, self.expires_in, self.uid)
+        return '{access_token: %s, expires_in: %s}' % (self.access_token, self.expires_in)
     
     
 def _request(http_method, url, query = None, timeout = 10):
@@ -97,11 +100,15 @@ def _request(http_method, url, query = None, timeout = 10):
         path += '?' + args
     conn = httplib.HTTPConnection(netloc, timeout = timeout) if scheme == 'http' else httplib.HTTPSConnection(netloc, timeout = timeout)
     headers = {
-        'User-Agent': 'WeiBo-Python-Client; Created by darkbull(http://darkbull.net)',
+        'User-Agent': 'QQWeiBo-Python-Client; Created by darkbull(http://darkbull.net)',
         'Host': netloc,
     }
+    print '-' * 30
+    print url
+    print '-' * 30
     
-    if 'statuses/upload' in url:    # 需要上传图片
+    
+    if 't/add_pic' in url:    # 需要上传图片
         assert http_method == 'POST'
         assert 'pic' in query
         pic_path = query.pop('pic')
@@ -163,19 +170,16 @@ def _request(http_method, url, query = None, timeout = 10):
     result = (resp.status, resp.reason, resp.read())
     conn.close()
     return result
-    
-_URI_COMMON = 'https://api.weibo.com/2/'
+
+
+_URI_COMMON = ' https://open.t.qq.com/api/'
 def _call(http_method, uri, token, **kwargs):
     if not uri.startswith('http'):
         uri = _URI_COMMON + uri
-    if not uri.endswith('.json'):
-        uri = uri + '.json'
     http_method = http_method.upper()
         
     params = { }
     for key, val in kwargs.items():
-        if key.startswith('__'):    # 很恶心的参数，如：:id, 这里用 __id代替
-            key = ':' + key[2:]
         if type(key) is unicode:
             key = utf8(key)
         if type(val) is unicode:
@@ -183,7 +187,12 @@ def _call(http_method, uri, token, **kwargs):
         params[key] = val
         
     if token:
+        params['oauth_consumer_key'] = token.appkey
         params['access_token'] = token.access_token
+        params['openid'] = token.open_id
+        params['oauth_version'] = '2.a'
+        params['clientip'] = '60.186.221.66'
+        params['scope'] = 'all'
     
     try:
         errcode, reason, html = _request(http_method, uri, params)
@@ -205,7 +214,7 @@ def _call(http_method, uri, token, **kwargs):
         raise WeiBoError(u'[error:%s occur when request "%s"]:%s' % (json_obj['error_code'],  json_obj['request'], json_obj['error']))
     return DictObject(json_obj)
 
-    
+
 class OAuth2Api(object):
     def __init__(self, appkey, appsecret, callback):
         self.appkey = appkey
@@ -216,16 +225,17 @@ class OAuth2Api(object):
     def get_auth_url(self):
         '''获取用户授权url
         '''
-        return 'https://api.weibo.com/oauth2/authorize?client_id=%s&response_type=code&redirect_uri=%s' % (self.appkey, urllib.quote(self.callback))
+        return 'https://open.t.qq.com/cgi-bin/oauth2/authorize?client_id=%s&response_type=code&redirect_uri=%s' % (self.appkey, urllib.quote(self.callback))
         
     def create_token(self, code):
         '''获取AccessToken
         '''
-        url = 'https://api.weibo.com/oauth2/access_token?client_id=%s&client_secret=%s&grant_type=authorization_code&redirect_uri=%s&code=%s' % (self.appkey, self.appsecret, self.callback, code)
-        errcode, reason, html = _request('POST', url)
+        url = 'https://open.t.qq.com/cgi-bin/oauth2/access_token?client_id=%s&client_secret=%s&redirect_uri=%s&grant_type=authorization_code&code=%s' % (self.appkey, self.appsecret, self.callback, code)
+        errcode, reason, html = _request('GET', url)
+        # eg: access_token=55707e5e8df00254888acd26e5e329b9&expires_in=604800&refresh_token=051dc636c73a6f0cfd00855b2ca4772e&openid=1427826f724bcb2a94bd449d8940795e&name=darkbull&nick=DarkBull&state=
         if errcode == 200:
-            ret = DictObject(html)
-            return OAuthToken(self.appkey, self.appsecret, ret.access_token, ret.expires_in, ret.uid, html)
+            access_token, expires_in, refresh_token, open_id, name, nick, state = (item.split('=')[1] for item in html.split('&'))
+            return OAuthToken(self.appkey, self.appsecret, access_token, int(expires_in), open_id, name, nick, state, html)
         else:
             raise OAuth2Error(errcode, reason, html)
     
@@ -243,6 +253,14 @@ class OAuth2Api(object):
 
         
 if __name__ == '__main__':
-    pass
+    api = OAuth2Api('801094442', 'b7fd5b39ab55e1991a715fa3f79bf6d5', 'http://bz.qkutv.com/qq/')
+    url = api.get_auth_url()
+    import webbrowser
+    webbrowser.open(url)
+    code = raw_input(">>").strip()
+    token = api.create_token(code)
+    print api.user.info(token)
+    # api.t.add.post(token, content = u'数据测试')  # api 调用
+    # api.t.add_pic.post(token, content = u'测试上传图片哈哈', pic = '~/main.jpg')
     
     
