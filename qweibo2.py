@@ -253,14 +253,6 @@ class OAuth2Api(object):
 
         
 if __name__ == '__main__':
-    api = OAuth2Api('801094442', 'b7fd5b39ab55e1991a715fa3f79bf6d5', 'http://bz.qkutv.com/qq/')
-    url = api.get_auth_url()
-    import webbrowser
-    webbrowser.open(url)
-    code = raw_input(">>").strip()
-    token = api.create_token(code)
-    print api.user.info(token)
-    # api.t.add.post(token, content = u'数据测试')  # api 调用
-    # api.t.add_pic.post(token, content = u'测试上传图片哈哈', pic = '~/main.jpg')
+    pass
     
     
