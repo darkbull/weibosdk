@@ -217,7 +217,7 @@ class OAuth2Api(object):
     def __init__(self, appkey, appsecret, callback):
         self.appkey = appkey
         self.appsecret = appsecret
-        self.callback = callback    ＃ callback与后台设置的不一致好像也可以正常回调
+        self.callback = callback    # callback与后台设置的不一致好像也可以正常回调
         self._attrs = [ ]
         
     def get_auth_url(self):
