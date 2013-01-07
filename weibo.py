@@ -17,6 +17,7 @@
         api = OAuthApi('appkey', 'appsecret')
         token = api.create_token()
         url = token.get_auth_url()
+        import webbrowser
         webbrowser.open(url)
         code = raw_input(">>").strip()
         token.set_verifier(code)
@@ -26,7 +27,6 @@
 
 __version__ = '0.1b'
 __author__ = 'darkbull(http://darkbull.net)'
-
 
 import urllib
 import binascii
